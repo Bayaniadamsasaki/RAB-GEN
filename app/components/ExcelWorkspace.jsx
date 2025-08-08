@@ -1,7 +1,7 @@
 'use client';
 
 import { Download, Plus, Save, Trash } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import HeaderNew from './HeaderNew.jsx';
 
@@ -12,6 +12,20 @@ const ExcelWorkspace = () => {
     duration: '',
     work: ''
   });
+
+  const [signatureInfo, setSignatureInfo] = useState({
+    company: '',
+    position: '',
+    name: ''
+  });
+
+  const [savedProjects, setSavedProjects] = useState([]);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState(null);
 
   const [rabData, setRabData] = useState([
     // Header data
@@ -66,6 +80,88 @@ const ExcelWorkspace = () => {
   const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState('');
 
+  // Load saved projects on component mount
+  useEffect(() => {
+    const saved = localStorage.getItem('rabgen-projects');
+    if (saved) {
+      setSavedProjects(JSON.parse(saved));
+    }
+  }, []);
+
+  // Notification system
+  const showNotification = (message, type = 'success') => {
+    const id = Date.now();
+    const notification = { id, message, type };
+    
+    setNotifications(prev => [...prev, notification]);
+    
+    // Auto remove after 4 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  };
+
+  const removeNotification = (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Save project functions
+  const saveProject = () => {
+    if (!projectName.trim()) {
+      showNotification('Silakan masukkan nama project terlebih dahulu!', 'error');
+      return;
+    }
+
+    const projectData = {
+      id: Date.now(),
+      name: projectName,
+      createdAt: new Date().toISOString(),
+      projectInfo,
+      signatureInfo,
+      rabData
+    };
+
+    const existingProjects = JSON.parse(localStorage.getItem('rabgen-projects') || '[]');
+    const updatedProjects = [...existingProjects, projectData];
+    
+    localStorage.setItem('rabgen-projects', JSON.stringify(updatedProjects));
+    setSavedProjects(updatedProjects);
+    
+    setShowSaveDialog(false);
+    setProjectName('');
+    showNotification(`Project "${projectData.name}" berhasil disimpan! 💾`);
+  };
+
+  const loadProject = (project) => {
+    setProjectInfo(project.projectInfo);
+    setSignatureInfo(project.signatureInfo);
+    setRabData(project.rabData);
+    setShowLoadDialog(false);
+    showNotification(`Project "${project.name}" berhasil dimuat! 📂`);
+  };
+
+  const deleteProject = (projectId) => {
+    const project = savedProjects.find(p => p.id === projectId);
+    setProjectToDelete(project);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteProject = () => {
+    if (projectToDelete) {
+      const updatedProjects = savedProjects.filter(p => p.id !== projectToDelete.id);
+      localStorage.setItem('rabgen-projects', JSON.stringify(updatedProjects));
+      setSavedProjects(updatedProjects);
+      showNotification(`Project "${projectToDelete.name}" berhasil dihapus! 🗑️`);
+      setShowDeleteConfirm(false);
+      setProjectToDelete(null);
+    }
+  };
+
+  const cancelDeleteProject = () => {
+    setShowDeleteConfirm(false);
+    setProjectToDelete(null);
+  };
+
   // Calculate totals
   const calculateSubtotal = (categoryItems) => {
     return categoryItems.reduce((sum, item) => sum + item.total, 0);
@@ -82,6 +178,29 @@ const ExcelWorkspace = () => {
 
   const formatRupiah = (amount) => {
     return new Intl.NumberFormat('id-ID').format(amount);
+  };
+
+  const terbilang = (angka) => {
+    const satuan = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan'];
+    const belasan = ['sepuluh', 'sebelas', 'dua belas', 'tiga belas', 'empat belas', 'lima belas', 'enam belas', 'tujuh belas', 'delapan belas', 'sembilan belas'];
+
+    const terbilangRekursif = (n) => {
+      if (n === 0) return '';
+      if (n < 10) return satuan[n];
+      if (n < 20) return belasan[n - 10];
+      if (n < 100) return satuan[Math.floor(n / 10)] + ' puluh ' + terbilangRekursif(n % 10);
+      if (n < 200) return 'seratus ' + terbilangRekursif(n % 100);
+      if (n < 1000) return satuan[Math.floor(n / 100)] + ' ratus ' + terbilangRekursif(n % 100);
+      if (n < 2000) return 'seribu ' + terbilangRekursif(n % 1000);
+      if (n < 1000000) return terbilangRekursif(Math.floor(n / 1000)) + ' ribu ' + terbilangRekursif(n % 1000);
+      if (n < 1000000000) return terbilangRekursif(Math.floor(n / 1000000)) + ' juta ' + terbilangRekursif(n % 1000000);
+      if (n < 1000000000000) return terbilangRekursif(Math.floor(n / 1000000000)) + ' miliar ' + terbilangRekursif(n % 1000000000);
+      return terbilangRekursif(Math.floor(n / 1000000000000)) + ' triliun ' + terbilangRekursif(n % 1000000000000);
+    };
+
+    if (angka === 0) return 'nol rupiah';
+    
+    return terbilangRekursif(angka).trim() + ' rupiah';
   };
 
   // Handle cell editing
@@ -232,13 +351,13 @@ const ExcelWorkspace = () => {
     const grandTotal = calculateGrandTotal();
     data.push([``, `JUMLAH`, ``, ``, ``, `Rp ${formatRupiah(grandTotal)}`, `100.0%`]);
     data.push([]);
-    data.push([`Terbilang [Isi otomatis]`]);
+    data.push([`Terbilang: ${terbilang(grandTotal)}`]);
     data.push([]);
-    data.push([`[Nama Instansi / Startup]`]);
-    data.push([`[Jabatan]`]);
+    data.push([signatureInfo.company || `[Nama Instansi / Startup]`]);
+    data.push([signatureInfo.position || `[Jabatan]`]);
     data.push([]);
     data.push([]);
-    data.push([`[Nama Kamu]`]);
+    data.push([signatureInfo.name || `[Nama Kamu]`]);
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     
@@ -254,7 +373,9 @@ const ExcelWorkspace = () => {
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'RAB');
-    XLSX.writeFile(wb, `RAB_${projectInfo.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const fileName = `RAB_${projectInfo.name.replace(/\s+/g, '_') || 'Project'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    showNotification(`File Excel berhasil diunduh: ${fileName} 📥`, 'success');
   };
 
   return (
@@ -334,9 +455,17 @@ const ExcelWorkspace = () => {
                   <Download size={16} />
                   <span>Export Excel</span>
                 </button>
-                <button className="flex items-center gap-2 px-3 py-2 text-xs sm:px-4 sm:text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+                <button className="flex items-center gap-2 px-3 py-2 text-xs sm:px-4 sm:text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  onClick={() => setShowSaveDialog(true)}
+                >
                   <Save size={16} />
                   <span>Save Project</span>
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 text-xs sm:px-4 sm:text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+                  onClick={() => setShowLoadDialog(true)}
+                >
+                  <Plus size={16} />
+                  <span>Load Project</span>
                 </button>
               </div>
               <div className="bg-gray-700 text-white px-3 py-2 sm:px-4 rounded text-xs sm:text-sm">
@@ -588,17 +717,198 @@ const ExcelWorkspace = () => {
 
           {/* Footer */}
           <div className="p-4 bg-gray-750 border-t border-gray-600">
-            <div className="text-sm text-gray-300 mb-2">Terbilang [Isi otomatis]</div>
+            <div className="text-sm text-gray-300 mb-2">
+              Terbilang: <span className="capitalize font-medium">{terbilang(calculateGrandTotal())}</span>
+            </div>
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div></div>
               <div className="text-right">
-                <div className="mb-2 text-gray-300">[Nama Instansi / Startup]</div>
-                <div className="mb-8 text-gray-300">[Jabatan]</div>
-                <div className="border-b border-gray-400 pb-1 text-gray-300">[Nama Kamu]</div>
+                <input
+                  type="text"
+                  value={signatureInfo.company}
+                  onChange={(e) => setSignatureInfo({...signatureInfo, company: e.target.value})}
+                  placeholder="[Nama Instansi / Startup]"
+                  className="mb-2 text-gray-300 bg-transparent border-b border-gray-600 focus:border-blue-500 outline-none text-right w-full"
+                />
+                <input
+                  type="text"
+                  value={signatureInfo.position}
+                  onChange={(e) => setSignatureInfo({...signatureInfo, position: e.target.value})}
+                  placeholder="[Jabatan]"
+                  className="mb-8 text-gray-300 bg-transparent border-b border-gray-600 focus:border-blue-500 outline-none text-right w-full"
+                />
+                <input
+                  type="text"
+                  value={signatureInfo.name}
+                  onChange={(e) => setSignatureInfo({...signatureInfo, name: e.target.value})}
+                  placeholder="[Nama Kamu]"
+                  className="border-b border-gray-400 pb-1 text-gray-300 bg-transparent focus:border-blue-500 outline-none text-right w-full"
+                />
               </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Save Project Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <h3 className="text-lg font-bold text-white mb-4">Save Project</h3>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="Masukkan nama project..."
+              className="w-full p-3 bg-gray-700 text-white border border-gray-600 rounded focus:border-blue-500 outline-none mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveProject}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Load Project Dialog */}
+      {showLoadDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-96 max-h-96 overflow-y-auto">
+            <h3 className="text-lg font-bold text-white mb-4">Load Project</h3>
+            {savedProjects.length === 0 ? (
+              <p className="text-gray-400 text-center py-4">Belum ada project yang disimpan</p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {savedProjects.map((project) => (
+                  <div key={project.id} className="flex items-center justify-between p-3 bg-gray-700 rounded">
+                    <div>
+                      <div className="text-white font-medium">{project.name}</div>
+                      <div className="text-gray-400 text-sm">
+                        {new Date(project.createdAt).toLocaleDateString('id-ID')}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => loadProject(project)}
+                        className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm"
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => deleteProject(project.id)}
+                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm"
+                      >
+                        <Trash size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && projectToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.963-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-white">Konfirmasi Hapus</h3>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-gray-300">
+                Apakah Anda yakin ingin menghapus project 
+                <span className="font-semibold text-white"> "{projectToDelete.name}"</span>?
+              </p>
+              <p className="text-gray-400 text-sm mt-2">
+                Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelDeleteProject}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmDeleteProject}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+              >
+                Hapus Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notifications */}
+      <div className="fixed top-20 right-4 space-y-2 z-50">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`
+              flex items-center justify-between p-4 rounded-lg shadow-lg min-w-80 max-w-96
+              transform transition-all duration-300 ease-in-out
+              animate-slide-in-right
+              ${notification.type === 'success' 
+                ? 'bg-green-600 text-white border-l-4 border-green-400' 
+                : 'bg-red-600 text-white border-l-4 border-red-400'
+              }
+            `}
+          >
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                {notification.type === 'success' ? (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
+              <div className="text-sm font-medium">
+                {notification.message}
+              </div>
+            </div>
+            <button
+              onClick={() => removeNotification(notification.id)}
+              className="flex-shrink-0 ml-4 text-white/70 hover:text-white transition-colors"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
